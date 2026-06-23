@@ -2,10 +2,11 @@
 
 ### 2601110299 장세은
 
-## 실행 영상  
-[자동 운전](https://github.com/user-attachments/assets/e0031647-a1bb-42bd-9624-f70b45aee198)
+## 실행 영상 (자동 모드와 수동 모드) 
+[자동 운전](https://github.com/user-attachments/assets/aab9eccf-ce81-4988-9b89-1ddf77ff0670)  
 
-[수동 조작](https://github.com/user-attachments/assets/26425652-f2b3-4d63-b9fe-c06192636c8e)  
+---
+[수동 조작](https://github.com/user-attachments/assets/f75ab2ce-1a45-449f-887e-8452844f4a7d)
 
 ---
 
