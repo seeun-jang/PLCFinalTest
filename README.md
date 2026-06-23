@@ -1,10 +1,11 @@
-# [실습6] PLC 리프트 제어 자동/수동 운전 프로그램  
+# PLC 리프트 제어 자동/수동 운전 프로그램  
 
 ### 2601110299 장세은
 
-## 실행 영상
-[자동 운전](https://github.com/user-attachments/assets/e404dcf5-bdc6-4d40-a26f-141c8cba72bb)  
-[수동 조작](https://github.com/user-attachments/assets/49030a3d-cb30-4f36-8844-edeaa8003482)  
+## 실행 영상  
+[자동 운전](https://github.com/user-attachments/assets/e0031647-a1bb-42bd-9624-f70b45aee198)
+
+[수동 조작](https://github.com/user-attachments/assets/26425652-f2b3-4d63-b9fe-c06192636c8e)  
 
 ---
 
