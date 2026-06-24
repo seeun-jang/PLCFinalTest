@@ -6,8 +6,11 @@ namespace PLCFinalTest
 {
     public partial class Form1 : Form
     {
-        ActEasyIF control = new ActEasyIF();
+        // PLC 제어 객체
+        // 디자이너 오류 방지를 위해 처음에는 null로 둠
+        ActEasyIF control = null;
 
+        // 자동운전용 타이머
         Timer autoTimer = new Timer();
 
         bool isConnected = false;
@@ -21,9 +24,6 @@ namespace PLCFinalTest
         short lastYValue = 0;
 
         string statusMessage = "초기상태";
-
-        // 센서 읽기 실패 횟수
-        int sensorFailCount = 0;
 
         // X 입력 센서
         int SENSOR_B_FWD = 1 << 2;       // X02 : B실린더 전진 완료
@@ -58,17 +58,17 @@ namespace PLCFinalTest
         {
             InitializeComponent();
 
-            // Timer는 디자인에 넣지 않고 코드에서 직접 생성
-            // 100ms보다 200ms가 시뮬레이터에서 더 안정적임
             autoTimer.Interval = 200;
             autoTimer.Tick += autoTimer_Tick;
 
-            UpdateAllLabels();
+            UpdateLabels();
         }
 
         // 연결 버튼
         private void button1_Click(object sender, EventArgs e)
         {
+            control = new ActEasyIF();
+
             int result = control.Open();
 
             if (result == 0)
@@ -86,7 +86,7 @@ namespace PLCFinalTest
                 MessageBox.Show("연결 실패!");
             }
 
-            UpdateAllLabels();
+            UpdateLabels();
         }
 
         // 자동 모드 버튼
@@ -98,13 +98,12 @@ namespace PLCFinalTest
             currentMode = "AUTO";
             isAutoRunning = false;
             step = 0;
-            sensorFailCount = 0;
 
             autoTimer.Stop();
             StopAll();
 
             statusMessage = "자동 모드";
-            UpdateAllLabels();
+            UpdateLabels();
         }
 
         // 수동 모드 버튼
@@ -116,15 +115,12 @@ namespace PLCFinalTest
             currentMode = "MANUAL";
             isAutoRunning = false;
             step = 0;
-            sensorFailCount = 0;
 
-            // 수동 모드에서는 센서를 계속 읽지 않음
             autoTimer.Stop();
-
             StopAll();
 
             statusMessage = "수동 모드";
-            UpdateAllLabels();
+            UpdateLabels();
         }
 
         // 정지 버튼
@@ -132,15 +128,12 @@ namespace PLCFinalTest
         {
             isAutoRunning = false;
             step = 0;
-            sensorFailCount = 0;
 
             autoTimer.Stop();
-
-            if (isConnected)
-                StopAll();
+            StopAll();
 
             statusMessage = "정지";
-            UpdateAllLabels();
+            UpdateLabels();
         }
 
         // 자동 시작 버튼
@@ -157,10 +150,9 @@ namespace PLCFinalTest
 
             isAutoRunning = true;
             step = 0;
-            sensorFailCount = 0;
 
-            // 자동 시작 시 B, C 실린더는 후진 상태
-            // 리프트는 물건이 감지되기 전까지 정지
+            // 시작할 때 B, C 실린더는 후진 상태
+            // 리프트는 정지 상태
             SetOutput(
                 false, true,      // B 후진
                 false, true,      // C 후진
@@ -168,11 +160,10 @@ namespace PLCFinalTest
                 false, false      // LiftB 정지
             );
 
-            // 자동 시작할 때만 타이머 작동
             autoTimer.Start();
 
             statusMessage = "자동 시작";
-            UpdateAllLabels();
+            UpdateLabels();
         }
 
         // B 전진
@@ -183,7 +174,7 @@ namespace PLCFinalTest
 
             SetBOutput(true);
             statusMessage = "B 전진";
-            UpdateAllLabels();
+            UpdateLabels();
         }
 
         // B 후진
@@ -194,7 +185,7 @@ namespace PLCFinalTest
 
             SetBOutput(false);
             statusMessage = "B 후진";
-            UpdateAllLabels();
+            UpdateLabels();
         }
 
         // C 전진
@@ -205,7 +196,7 @@ namespace PLCFinalTest
 
             SetCOutput(true);
             statusMessage = "C 전진";
-            UpdateAllLabels();
+            UpdateLabels();
         }
 
         // C 후진
@@ -216,7 +207,7 @@ namespace PLCFinalTest
 
             SetCOutput(false);
             statusMessage = "C 후진";
-            UpdateAllLabels();
+            UpdateLabels();
         }
 
         // LiftA Up
@@ -227,7 +218,7 @@ namespace PLCFinalTest
 
             SetLiftAOutput(true);
             statusMessage = "LiftA Up";
-            UpdateAllLabels();
+            UpdateLabels();
         }
 
         // LiftA Down
@@ -238,7 +229,7 @@ namespace PLCFinalTest
 
             SetLiftAOutput(false);
             statusMessage = "LiftA Down";
-            UpdateAllLabels();
+            UpdateLabels();
         }
 
         // LiftB Up
@@ -249,7 +240,7 @@ namespace PLCFinalTest
 
             SetLiftBOutput(true);
             statusMessage = "LiftB Up";
-            UpdateAllLabels();
+            UpdateLabels();
         }
 
         // LiftB Down
@@ -260,13 +251,13 @@ namespace PLCFinalTest
 
             SetLiftBOutput(false);
             statusMessage = "LiftB Down";
-            UpdateAllLabels();
+            UpdateLabels();
         }
 
-        // 타이머: 자동운전일 때만 센서 읽기
+        // 타이머: 자동운전 중일 때만 센서 읽기
         private void autoTimer_Tick(object sender, EventArgs e)
         {
-            if (!isConnected)
+            if (!isConnected || control == null)
                 return;
 
             if (currentMode != "AUTO")
@@ -276,58 +267,24 @@ namespace PLCFinalTest
                 return;
 
             short sensor = 0;
-            int readResult = -1;
 
-            try
-            {
-                readResult = control.ReadDeviceBlock2("X0", 1, out sensor);
-            }
-            catch
-            {
-                sensorFailCount++;
-
-                // 한두 번 센서 읽기가 튀는 것은 무시
-                if (sensorFailCount < 5)
-                    return;
-
-                isAutoRunning = false;
-                autoTimer.Stop();
-
-                statusMessage = "센서 읽기 오류";
-                UpdateAllLabels();
-
-                MessageBox.Show("센서 값을 여러 번 연속으로 읽지 못했습니다.\n시뮬레이터 연결 상태를 확인하세요.");
-                return;
-            }
+            int readResult = control.ReadDeviceBlock2("X0", 1, out sensor);
 
             if (readResult != 0)
             {
-                sensorFailCount++;
-
-                if (sensorFailCount < 5)
-                    return;
-
-                isAutoRunning = false;
-                autoTimer.Stop();
-
                 statusMessage = "센서 읽기 실패";
-                UpdateAllLabels();
-
-                MessageBox.Show("센서 읽기에 실패했습니다.\n시뮬레이터 연결 상태를 확인하세요.");
+                UpdateLabels();
                 return;
             }
-
-            // 센서 읽기 성공하면 실패 횟수 초기화
-            sensorFailCount = 0;
 
             lastSensorValue = sensor;
 
             RunAutoSequence(sensor);
 
-            UpdateAllLabels();
+            UpdateLabels();
         }
 
-        // 자동운전 시퀀스
+        // 자동운전 순서
         private void RunAutoSequence(short sensor)
         {
             bool bForwardSensor = IsOn(sensor, SENSOR_B_FWD);
@@ -348,7 +305,7 @@ namespace PLCFinalTest
             switch (step)
             {
                 case 0:
-                    // LiftA에 물건 감지 -> B 전진 + LiftB 상승
+                    // StageA에 물건이 감지되면 B 전진 + LiftB 상승
                     if (stageA)
                     {
                         SetOutput(
@@ -380,7 +337,7 @@ namespace PLCFinalTest
                     break;
 
                 case 2:
-                    // B 후진 완료 + LiftB 하강 완료 -> C 전진 + LiftA 하강
+                    // B 후진 완료 + LiftB 하강 완료
                     if (bBackwardSensor && liftBDownSensor)
                     {
                         SetOutput(
@@ -412,7 +369,7 @@ namespace PLCFinalTest
                     break;
 
                 case 4:
-                    // C 후진 완료 + LiftA 상승 완료 -> 반복
+                    // C 후진 완료 + LiftA 상승 완료
                     if (cBackwardSensor && liftAUpSensor)
                     {
                         SetOutput(
@@ -439,28 +396,28 @@ namespace PLCFinalTest
             short yValue = 0;
 
             if (bFwd)
-                yValue |= (short)OUT_B_FWD;
+                yValue += (short)OUT_B_FWD;
 
             if (bBwd)
-                yValue |= (short)OUT_B_BWD;
+                yValue += (short)OUT_B_BWD;
 
             if (cFwd)
-                yValue |= (short)OUT_C_FWD;
+                yValue += (short)OUT_C_FWD;
 
             if (cBwd)
-                yValue |= (short)OUT_C_BWD;
+                yValue += (short)OUT_C_BWD;
 
             if (liftAUp)
-                yValue |= (short)OUT_LIFTA_UP;
+                yValue += (short)OUT_LIFTA_UP;
 
             if (liftADown)
-                yValue |= (short)OUT_LIFTA_DOWN;
+                yValue += (short)OUT_LIFTA_DOWN;
 
             if (liftBUp)
-                yValue |= (short)OUT_LIFTB_UP;
+                yValue += (short)OUT_LIFTB_UP;
 
             if (liftBDown)
-                yValue |= (short)OUT_LIFTB_DOWN;
+                yValue += (short)OUT_LIFTB_DOWN;
 
             WriteY(yValue);
         }
@@ -468,61 +425,65 @@ namespace PLCFinalTest
         // 수동 B 제어
         private void SetBOutput(bool forward)
         {
-            int yValue = lastYValue;
+            short yValue = lastYValue;
 
-            yValue &= ~(OUT_B_FWD | OUT_B_BWD);
+            yValue = (short)(yValue & ~OUT_B_FWD);
+            yValue = (short)(yValue & ~OUT_B_BWD);
 
             if (forward)
-                yValue |= OUT_B_FWD;
+                yValue += (short)OUT_B_FWD;
             else
-                yValue |= OUT_B_BWD;
+                yValue += (short)OUT_B_BWD;
 
-            WriteY((short)yValue);
+            WriteY(yValue);
         }
 
         // 수동 C 제어
         private void SetCOutput(bool forward)
         {
-            int yValue = lastYValue;
+            short yValue = lastYValue;
 
-            yValue &= ~(OUT_C_FWD | OUT_C_BWD);
+            yValue = (short)(yValue & ~OUT_C_FWD);
+            yValue = (short)(yValue & ~OUT_C_BWD);
 
             if (forward)
-                yValue |= OUT_C_FWD;
+                yValue += (short)OUT_C_FWD;
             else
-                yValue |= OUT_C_BWD;
+                yValue += (short)OUT_C_BWD;
 
-            WriteY((short)yValue);
+            WriteY(yValue);
         }
 
         // 수동 LiftA 제어
         private void SetLiftAOutput(bool up)
         {
-            int yValue = lastYValue;
+            short yValue = lastYValue;
 
-            yValue &= ~(OUT_LIFTA_UP | OUT_LIFTA_DOWN);
+            yValue = (short)(yValue & ~OUT_LIFTA_UP);
+            yValue = (short)(yValue & ~OUT_LIFTA_DOWN);
 
             if (up)
-                yValue |= OUT_LIFTA_UP;
+                yValue += (short)OUT_LIFTA_UP;
             else
-                yValue |= OUT_LIFTA_DOWN;
+                yValue += (short)OUT_LIFTA_DOWN;
 
-            WriteY((short)yValue);
+            WriteY(yValue);
         }
 
         // 수동 LiftB 제어
         private void SetLiftBOutput(bool up)
         {
-            int yValue = lastYValue;
+            short yValue = lastYValue;
 
-            yValue &= ~(OUT_LIFTB_UP | OUT_LIFTB_DOWN);
+            yValue = (short)(yValue & ~OUT_LIFTB_UP);
+            yValue = (short)(yValue & ~OUT_LIFTB_DOWN);
 
             if (up)
-                yValue |= OUT_LIFTB_UP;
+                yValue += (short)OUT_LIFTB_UP;
             else
-                yValue |= OUT_LIFTB_DOWN;
+                yValue += (short)OUT_LIFTB_DOWN;
 
-            WriteY((short)yValue);
+            WriteY(yValue);
         }
 
         // Y 출력 쓰기
@@ -530,29 +491,18 @@ namespace PLCFinalTest
         {
             lastYValue = yValue;
 
-            if (!isConnected)
+            if (!isConnected || control == null)
                 return;
 
-            try
-            {
-                int writeResult = control.WriteDeviceBlock2("Y0", 1, ref yValue);
+            int writeResult = control.WriteDeviceBlock2("Y0", 1, ref yValue);
 
-                if (writeResult != 0)
-                {
-                    statusMessage = "출력 실패";
-                }
-            }
-            catch
+            if (writeResult != 0)
             {
-                isAutoRunning = false;
-                autoTimer.Stop();
-
-                statusMessage = "출력 오류";
-                MessageBox.Show("출력 중 오류가 발생했습니다.\n시뮬레이터 연결 상태를 확인하세요.");
+                statusMessage = "출력 실패";
             }
         }
 
-        // 모든 출력 OFF
+        // 전체 출력 OFF
         private void StopAll()
         {
             short yValue = 0;
@@ -562,7 +512,7 @@ namespace PLCFinalTest
         // 연결 확인
         private bool CheckConnected()
         {
-            if (!isConnected)
+            if (!isConnected || control == null)
             {
                 MessageBox.Show("먼저 연결 버튼을 누르세요.");
                 return false;
@@ -592,13 +542,13 @@ namespace PLCFinalTest
             return true;
         }
 
-        // 비트가 켜졌는지 확인
+        // 비트 ON/OFF 확인
         private bool IsOn(short value, int mask)
         {
             return (((int)value & mask) != 0);
         }
 
-        // 현재 모드 글자
+        // 모드 글자 표시
         private string GetModeText()
         {
             if (currentMode == "AUTO")
@@ -611,76 +561,69 @@ namespace PLCFinalTest
         }
 
         // 전체 라벨 갱신
-        private void UpdateAllLabels()
+        private void UpdateLabels()
         {
-            UpdateStatusLabel();
-            UpdateSensorLabel();
-            UpdateOutputLabel();
-        }
-
-        // 현재 모드 / 전체 상태
-        private void UpdateStatusLabel()
-        {
-            string runText = isAutoRunning ? "실행" : "정지";
-
             label1.Text =
                 "모드: " + GetModeText() +
-                "   운전: " + runText +
+                "   운전: " + (isAutoRunning ? "실행" : "정지") +
                 "   Step: " + step +
                 "   상태: " + statusMessage;
+
+            label2.Text = "센서: " + GetSensorText();
+            label3.Text = "출력: " + GetOutputText();
         }
 
-        // 센서 상태
-        private void UpdateSensorLabel()
+        // 센서 상태 글자 만들기
+        private string GetSensorText()
         {
-            string sensorText = "";
+            string text = "";
 
-            sensorText = AddOnText(sensorText, IsOn(lastSensorValue, STAGE_A), "StageA");
-            sensorText = AddOnText(sensorText, IsOn(lastSensorValue, STAGE_B), "StageB");
+            text = AddText(text, IsOn(lastSensorValue, STAGE_A), "StageA");
+            text = AddText(text, IsOn(lastSensorValue, STAGE_B), "StageB");
 
-            sensorText = AddOnText(sensorText, IsOn(lastSensorValue, SENSOR_B_FWD), "B전진완료");
-            sensorText = AddOnText(sensorText, IsOn(lastSensorValue, SENSOR_B_BWD), "B후진완료");
+            text = AddText(text, IsOn(lastSensorValue, SENSOR_B_FWD), "B전진완료");
+            text = AddText(text, IsOn(lastSensorValue, SENSOR_B_BWD), "B후진완료");
 
-            sensorText = AddOnText(sensorText, IsOn(lastSensorValue, SENSOR_C_FWD), "C전진완료");
-            sensorText = AddOnText(sensorText, IsOn(lastSensorValue, SENSOR_C_BWD), "C후진완료");
+            text = AddText(text, IsOn(lastSensorValue, SENSOR_C_FWD), "C전진완료");
+            text = AddText(text, IsOn(lastSensorValue, SENSOR_C_BWD), "C후진완료");
 
-            sensorText = AddOnText(sensorText, IsOn(lastSensorValue, SENSOR_LIFTA_UP), "LiftA Up");
-            sensorText = AddOnText(sensorText, IsOn(lastSensorValue, SENSOR_LIFTA_DOWN), "LiftA Down");
+            text = AddText(text, IsOn(lastSensorValue, SENSOR_LIFTA_UP), "LiftA Up");
+            text = AddText(text, IsOn(lastSensorValue, SENSOR_LIFTA_DOWN), "LiftA Down");
 
-            sensorText = AddOnText(sensorText, IsOn(lastSensorValue, SENSOR_LIFTB_UP), "LiftB Up");
-            sensorText = AddOnText(sensorText, IsOn(lastSensorValue, SENSOR_LIFTB_DOWN), "LiftB Down");
+            text = AddText(text, IsOn(lastSensorValue, SENSOR_LIFTB_UP), "LiftB Up");
+            text = AddText(text, IsOn(lastSensorValue, SENSOR_LIFTB_DOWN), "LiftB Down");
 
-            if (sensorText == "")
-                sensorText = "감지 없음";
+            if (text == "")
+                text = "감지 없음";
 
-            label2.Text = "센서: " + sensorText;
+            return text;
         }
 
-        // 출력 상태
-        private void UpdateOutputLabel()
+        // 출력 상태 글자 만들기
+        private string GetOutputText()
         {
-            string outputText = "";
+            string text = "";
 
-            outputText = AddOnText(outputText, IsOn(lastYValue, OUT_B_FWD), "B전진");
-            outputText = AddOnText(outputText, IsOn(lastYValue, OUT_B_BWD), "B후진");
+            text = AddText(text, IsOn(lastYValue, OUT_B_FWD), "B전진");
+            text = AddText(text, IsOn(lastYValue, OUT_B_BWD), "B후진");
 
-            outputText = AddOnText(outputText, IsOn(lastYValue, OUT_C_FWD), "C전진");
-            outputText = AddOnText(outputText, IsOn(lastYValue, OUT_C_BWD), "C후진");
+            text = AddText(text, IsOn(lastYValue, OUT_C_FWD), "C전진");
+            text = AddText(text, IsOn(lastYValue, OUT_C_BWD), "C후진");
 
-            outputText = AddOnText(outputText, IsOn(lastYValue, OUT_LIFTA_UP), "LiftA Up");
-            outputText = AddOnText(outputText, IsOn(lastYValue, OUT_LIFTA_DOWN), "LiftA Down");
+            text = AddText(text, IsOn(lastYValue, OUT_LIFTA_UP), "LiftA Up");
+            text = AddText(text, IsOn(lastYValue, OUT_LIFTA_DOWN), "LiftA Down");
 
-            outputText = AddOnText(outputText, IsOn(lastYValue, OUT_LIFTB_UP), "LiftB Up");
-            outputText = AddOnText(outputText, IsOn(lastYValue, OUT_LIFTB_DOWN), "LiftB Down");
+            text = AddText(text, IsOn(lastYValue, OUT_LIFTB_UP), "LiftB Up");
+            text = AddText(text, IsOn(lastYValue, OUT_LIFTB_DOWN), "LiftB Down");
 
-            if (outputText == "")
-                outputText = "없음";
+            if (text == "")
+                text = "없음";
 
-            label3.Text = "출력: " + outputText;
+            return text;
         }
 
-        // ON인 항목만 문자열에 추가
-        private string AddOnText(string text, bool isOn, string name)
+        // ON 상태인 이름만 추가
+        private string AddText(string text, bool isOn, string name)
         {
             if (!isOn)
                 return text;
@@ -689,6 +632,7 @@ namespace PLCFinalTest
                 text += ", ";
 
             text += name;
+
             return text;
         }
 
@@ -717,19 +661,13 @@ namespace PLCFinalTest
         {
         }
 
-        // 폼 종료 시 출력 OFF + 연결 종료
+        // 폼 종료 시 출력 OFF
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
-            try
+            if (isConnected && control != null)
             {
-                if (isConnected)
-                {
-                    StopAll();
-                    control.Close();
-                }
-            }
-            catch
-            {
+                StopAll();
+                control.Close();
             }
 
             base.OnFormClosing(e);
